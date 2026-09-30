@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FinancePredict</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0F172A;--card:#1E293B;--line:#334155;--p:#2563EB;--s:#14B8A6;--ok:#22C55E;--warn:#F59E0B;--bad:#EF4444;--tx:#E2E8F0;--mu:#94A3B8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font-family:Inter,system-ui,sans-serif;display:flex;min-height:100vh}
+nav{width:230px;background:#0B1220;border-right:1px solid var(--line);padding:20px 12px;position:sticky;top:0;height:100vh;flex-shrink:0}
+nav h1{font-size:20px;margin:0 8px 20px;background:linear-gradient(90deg,var(--p),var(--s));-webkit-background-clip:text;color:transparent}
+nav a{display:block;padding:10px 12px;border-radius:10px;color:var(--mu);text-decoration:none;margin-bottom:4px;transition:.2s}
+nav a:hover{background:var(--card);color:var(--tx)}nav a.on{background:var(--p);color:#fff}
+main{flex:1;padding:24px;min-width:0;max-width:1200px}
+h2{margin:0 0 4px}.sub{color:var(--mu);margin:0 0 20px}
+.grid{display:grid;gap:16px}.g3{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 4px 20px #0004;transition:.2s}
+.card:hover{transform:translateY(-2px);border-color:var(--p)}
+.stat b{display:block;font-size:24px;margin-top:6px}.stat span{color:var(--mu);font-size:13px}
+canvas{max-height:300px}
+label{display:block;font-size:12px;color:var(--mu);margin:8px 0 4px}
+input,select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
+button{background:var(--p);color:#fff;border:0;padding:10px 16px;border-radius:10px;cursor:pointer;font-weight:600;transition:.2s}
+button:hover{filter:brightness(1.15)}button:disabled{opacity:.5;cursor:wait}button.alt{background:var(--line)}button.del{background:var(--bad)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.row>*{flex:1;min-width:130px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:9px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mu);font-weight:500}
+.wrap{overflow-x:auto}.tag{padding:2px 8px;border-radius:99px;background:#2563EB33;font-size:12px}
+.warn{background:#F59E0B22;border:1px solid var(--warn);color:var(--warn);padding:8px 12px;border-radius:8px;margin:8px 0}
+.info{background:#14B8A622;border:1px solid var(--s);padding:8px 12px;border-radius:8px;margin:8px 0}
+code{background:var(--bg);padding:8px;border-radius:8px;display:block;overflow-x:auto;font-size:12px;color:var(--s);margin:8px 0}
+.hero{padding:40px 24px;border-radius:20px;background:linear-gradient(135deg,#1e3a8a,#0f766e);margin-bottom:20px}.hero h2{font-size:34px}
+.flow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.flow span.b{background:var(--card);padding:8px 12px;border-radius:10px;border:1px solid var(--line)}
+#toast{position:fixed;right:16px;bottom:16px;padding:12px 18px;border-radius:10px;display:none;z-index:9}
+.spin{color:var(--mu);padding:30px;text-align:center}
+@media(max-width:800px){body{flex-direction:column}nav{width:100%;height:auto;position:static;display:flex;flex-wrap:wrap;gap:4px;padding:10px}nav h1{width:100%;margin:0 0 6px}nav a{margin:0;padding:6px 10px;font-size:13px}main{padding:14px}.g2{grid-template-columns:1fr}}
+</style></head><body>
+<nav><h1>📈 FinancePredict</h1>
+<a href="#home">Home</a><a href="#dashboard">Dashboard</a><a href="#expenses">Expenses</a><a href="#predict">Prediction Center</a><a href="#models">Regression Models</a><a href="#history">Prediction History</a><a href="#about">About Project</a></nav>
+<main id="app"></main><div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s),inr=n=>'₹'+Math.round(n).toLocaleString('en-IN'),CATS=['Rent','Food','Transportation','Utilities','Healthcare','Entertainment','Education','Other'];
+const FEATS=[['income','Monthly Income'],['rent','Rent'],['food','Food'],['transportation','Transportation'],['utilities','Utilities'],['healthcare','Healthcare'],['entertainment','Entertainment'],['education','Education'],['other_expenses','Other Expenses']];
+let charts={},M=null;
+function toast(m,ok=true){const t=$('#toast');t.textContent=m;t.style.background=ok?'#166534':'#991B1B';t.style.display='block';setTimeout(()=>t.style.display='none',3500)}
+async function api(p,o={}){const c=new AbortController(),t=setTimeout(()=>c.abort(),15000);
+ try{const r=await fetch(p,{headers:{'Content-Type':'application/json'},signal:c.signal,...o,body:o.body?JSON.stringify(o.body):undefined});
+  const d=await r.json().catch(()=>({}));if(!r.ok){let m=d.detail;if(Array.isArray(m))m=m.map(x=>(x.loc||[]).slice(-1)+': '+x.msg).join('; ');throw new Error(m||'Request failed')}return d}
+ catch(e){throw new Error(e.name==='AbortError'?'The server took too long to respond.':e.message==='Failed to fetch'?'Backend unavailable. Is the server running?':e.message)}finally{clearTimeout(t)}}
+async function metrics(){if(!M)M=await api('/model/metrics');return M}
+function chart(id,cfg){if(charts[id])charts[id].destroy();Chart.defaults.color='#94A3B8';cfg.options={responsive:true,maintainAspectRatio:true,...cfg.options};charts[id]=new Chart($('#'+id),cfg)}
+const stat=(l,v,i,c='')=>`<div class="card stat"><span>${i} ${l}</span><b style="${c}">${v}</b></div>`;
+const met=i=>`<div class="grid g3">${[['R²',i.r2.toFixed(4)],['MAE',inr(i.mae)],['MSE',Math.round(i.mse).toLocaleString('en-IN')],['RMSE',inr(i.rmse)]].map(([a,b])=>stat(a,b,'')).join('')}</div>`;
+const explain=`<div class="info"><b>R²</b>: share of target variation explained by the model. <b>MAE</b>: average absolute error. <b>MSE</b>: average squared error. <b>RMSE</b>: √MSE, typical error, penalising large misses more.</div>`;
+const loading=()=>$('#app').innerHTML='<div class="spin">Loading…</div>';
+const fail=e=>$('#app').innerHTML=`<div class="warn">⚠ ${e.message}</div>`;
+
+const pages={
+home(){$('#app').innerHTML=`<div class="hero"><h2>FinancePredict</h2><p>Predict your monthly expenses and savings with Simple and Multiple Linear Regression trained on a real dataset (scikit-learn).</p>
+<div class="row" style="max-width:380px"><button onclick="location.hash='predict'">Start Prediction</button><button class="alt" onclick="location.hash='dashboard'">View Dashboard</button></div></div>
+<div class="grid g2"><div class="card"><h3>Linear Regression</h3><p>Fits a straight line <code>Expense = β0 + β1 × Income</code> minimising the sum of squared errors (least squares).</p></div>
+<div class="card"><h3>Multiple Linear Regression</h3><p>Uses several features at once: <code>Savings = β0 + β1·Income + β2·Rent + … + β9·Other</code></p></div>
+<div class="card"><h3>Features</h3><p>Expense tracker · dashboard · live metrics · coefficients · insights · prediction history · SQLite storage.</p></div>
+<div class="card"><h3>Stack</h3><p>Python, FastAPI, pandas, NumPy, scikit-learn, SQLite · Chart.js frontend.</p></div></div>`},
+
+async dashboard(){loading();try{const[m,ex,st]=await Promise.all([metrics(),api('/expenses'),api('/settings')]);
+ const by={};CATS.forEach(c=>by[c]=0);ex.forEach(e=>by[e.category]+=e.amount);const tot=ex.reduce((a,e)=>a+e.amount,0),inc=st.monthly_income,sav=inc-tot,rate=inc>0?sav/inc*100:0;
+ const ps=await api('/predict/simple',{method:'POST',body:{income:inc}});
+ const b={income:inc,rent:by.Rent,food:by.Food,transportation:by.Transportation,utilities:by.Utilities,healthcare:by.Healthcare,entertainment:by.Entertainment,education:by.Education,other_expenses:by.Other};
+ const pm=await api('/predict/multiple',{method:'POST',body:b});
+ $('#app').innerHTML=`<h2>Dashboard</h2><p class="sub">Your tracked expenses compared with model predictions.</p>
+ <div class="card" style="margin-bottom:16px"><div class="row"><div><label>Your monthly income (₹)</label><input id="inc" type="number" min="0" value="${inc}"></div><button id="si">Update income</button></div></div>
+ <div class="grid g3">${stat('Monthly Income',inr(inc),'💰')}${stat('Total Expenses',inr(tot),'🧾')}${stat('Predicted Expenses',inr(ps.predicted_expense),'🤖','color:var(--s)')}
+ ${stat('Current Savings',inr(sav),'🏦',sav<0?'color:var(--bad)':'color:var(--ok)')}${stat('Predicted Savings',inr(pm.predicted_savings),'🔮','color:var(--s)')}${stat('Savings Rate',rate.toFixed(1)+'%','📊')}</div>
+ <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Income vs Expense (dataset)</h3><canvas id="c1"></canvas></div><div class="card"><h3>Expense Category Breakdown</h3><canvas id="c2"></canvas></div>
+ <div class="card"><h3>Income vs Expenses (yours)</h3><canvas id="c3"></canvas></div><div class="card"><h3>Actual vs Predicted Savings (test set)</h3><canvas id="c4"></canvas></div>
+ <div class="card"><h3>Savings: current vs predicted</h3><canvas id="c5"></canvas></div></div>`;
+ $('#si').onclick=async()=>{try{await api('/settings',{method:'PUT',body:{monthly_income:+$('#inc').value}});toast('Income updated');pages.dashboard()}catch(e){toast(e.message,false)}};
+ chart('c1',{type:'scatter',data:{datasets:[{label:'Households',data:m.scatter,backgroundColor:'#2563EB88'},{type:'line',label:'Regression line',data:m.line,borderColor:'#22C55E',pointRadius:0}]}});
+ chart('c2',{type:'doughnut',data:{labels:CATS,datasets:[{data:CATS.map(c=>by[c]),backgroundColor:['#2563EB','#14B8A6','#22C55E','#F59E0B','#EF4444','#8B5CF6','#EC4899','#64748B']}]}});
+ chart('c3',{type:'bar',data:{labels:['Income','Expenses'],datasets:[{data:[inc,tot],backgroundColor:['#2563EB','#EF4444']}]},options:{plugins:{legend:{display:false}}}});
+ chart('c4',avp(m));
+ chart('c5',{type:'bar',data:{labels:['Current','Predicted (MLR)'],datasets:[{data:[sav,pm.predicted_savings],backgroundColor:['#22C55E','#14B8A6']}]},options:{plugins:{legend:{display:false}}}});
+ }catch(e){fail(e)}},
+
+async expenses(){loading();try{
+ const f={q:'',category:'',date_from:'',date_to:''};let edit=null;
+ $('#app').innerHTML=`<h2>Expense Tracker</h2><p class="sub">Add, edit, filter and delete your actual monthly expenses.</p>
+ <div class="card"><div class="row"><div><label>Date</label><input id="d" type="date"></div><div><label>Category</label><select id="c">${CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+ <div><label>Amount (₹)</label><input id="a" type="number" min="0" step="0.01"></div><div><label>Description</label><input id="ds"></div><button id="sv">Add expense</button></div></div>
+ <div class="card" style="margin-top:16px"><div class="row"><div><label>Search</label><input id="fq"></div><div><label>Category</label><select id="fc"><option value="">All</option>${CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+ <div><label>From</label><input id="ff" type="date"></div><div><label>To</label><input id="ft" type="date"></div></div>
+ <h3 id="tt"></h3><div class="wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Description</th><th></th></tr></thead><tbody id="tb"></tbody></table></div></div>`;
+ $('#d').value=new Date().toISOString().slice(0,10);
+ async function load(){const p=new URLSearchParams(f);try{const r=await api('/expenses?'+p);$('#tt').textContent='Total: '+inr(r.reduce((a,e)=>a+e.amount,0))+' ('+r.length+' entries)';
+  $('#tb').innerHTML=r.map(e=>`<tr><td>${e.date}</td><td><span class="tag">${e.category}</span></td><td>${inr(e.amount)}</td><td>${e.description.replace(/</g,'&lt;')}</td><td><button class="alt" data-e="${e.id}">Edit</button> <button class="del" data-d="${e.id}">Delete</button></td></tr>`).join('')||'<tr><td colspan=5>No expenses found.</td></tr>';
+  $('#tb').querySelectorAll('[data-d]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this expense?')){try{await api('/expenses/'+b.dataset.d,{method:'DELETE'});toast('Deleted');load()}catch(e){toast(e.message,false)}}});
+  $('#tb').querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{const e=r.find(x=>x.id==b.dataset.e);edit=e.id;$('#d').value=e.date;$('#c').value=e.category;$('#a').value=e.amount;$('#ds').value=e.description;$('#sv').textContent='Save changes';scrollTo(0,0)})}catch(e){toast(e.message,false)}}
+ [['fq','q'],['fc','category'],['ff','date_from'],['ft','date_to']].forEach(([id,k])=>$('#'+id).oninput=e=>{f[k]=e.target.value;load()});
+ $('#sv').onclick=async()=>{const a=+$('#a').value;if(!$('#d').value||!(a>0))return toast('Enter a date and an amount greater than 0',false);
+  if(a>1e6&&!confirm('This amount is unusually large. Continue?'))return;$('#sv').disabled=true;
+  try{await api(edit?'/expenses/'+edit:'/expenses',{method:edit?'PUT':'POST',body:{date:$('#d').value,category:$('#c').value,amount:a,description:$('#ds').value}});toast(edit?'Updated':'Added');edit=null;$('#sv').textContent='Add expense';$('#a').value='';$('#ds').value='';load()}catch(e){toast(e.message,false)}$('#sv').disabled=false};
+ load()}catch(e){fail(e)}},
+
+async predict(){loading();try{const m=await metrics(),s=m.simple,mu=m.multiple;
+ $('#app').innerHTML=`<h2>Prediction Center</h2><p class="sub">Predictions are model estimates, not guarantees.</p>
+ <div class="card"><h3>A. Simple Linear Regression</h3><p>Independent variable: Monthly Income · Dependent variable: Monthly Expense</p><code>${s.equation}</code>
+ <div class="row"><div><label>Monthly Income (₹)</label><input id="si" type="number" min="0" value="50000"></div><button id="bs">Predict expense</button></div><div id="rs"></div>
+ <canvas id="cs" style="margin-top:12px"></canvas>${met(s)}${explain}</div>
+ <div class="card" style="margin-top:16px"><h3>B. Multiple Linear Regression</h3><p>Independent variables: income + 8 expense categories · Dependent variable: Monthly Savings</p><code>${mu.equation}</code>
+ <div class="row">${FEATS.map(([k,l])=>`<div><label>${l} (₹)</label><input id="m_${k}" type="number" min="0" value="${{income:60000,rent:15000,food:8000,transportation:3500,utilities:3000,healthcare:2000,entertainment:3000,education:2000,other_expenses:2500}[k]}"></div>`).join('')}</div>
+ <button id="bm" style="margin-top:12px">Predict savings</button><div id="rm"></div>
+ <div class="grid g2"><div><h4>Actual vs Predicted Savings</h4><canvas id="cm"></canvas></div><div><h4>Feature coefficients</h4><canvas id="cf"></canvas></div></div>${met(mu)}
+ <div class="info">A coefficient is the estimated change in the target for a one-unit change in that feature, holding other model features constant. It shows association, not proof of causation.</div></div>`;
+ const co=mu.coefficients;
+ chart('cf',{type:'bar',data:{labels:Object.keys(co),datasets:[{data:Object.values(co),backgroundColor:Object.values(co).map(v=>v>=0?'#22C55E':'#EF4444')}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});
+ chart('cm',avp(m));
+ const drawS=u=>chart('cs',{type:'scatter',data:{datasets:[{label:'Training data',data:m.scatter,backgroundColor:'#2563EB66'},{type:'line',label:'Regression line',data:m.line,borderColor:'#22C55E',pointRadius:0},...(u?[{label:'Your prediction',data:[u],backgroundColor:'#F59E0B',pointRadius:9}]:[])]},options:{scales:{x:{title:{display:true,text:'Monthly Income (₹)'}},y:{title:{display:true,text:'Monthly Expense (₹)'}}},plugins:{tooltip:{callbacks:{label:c=>`Income ${inr(c.parsed.x)}, Expense ${inr(c.parsed.y)}`}}}}});
+ drawS();
+ $('#bs').onclick=async()=>{const v=$('#si').value;if(v===''||+v<0||isNaN(+v))return toast('Enter a valid non-negative income',false);$('#bs').disabled=true;
+  try{const r=await api('/predict/simple',{method:'POST',body:{income:+v}});$('#rs').innerHTML=`${r.warnings.map(w=>`<div class="warn">⚠ ${w}</div>`).join('')}<div class="info">Based on the trained Simple Linear Regression model, the estimated monthly expense is <b>${inr(r.predicted_expense)}</b> for an income of ${inr(+v)} (model estimate, not a guarantee).</div>`;drawS({x:+v,y:r.predicted_expense});toast('Prediction saved')}catch(e){toast(e.message,false)}$('#bs').disabled=false};
+ $('#bm').onclick=async()=>{const b={};for(const[k]of FEATS){const v=$('#m_'+k).value;if(v===''||isNaN(+v)||+v<0)return toast(`Enter a valid non-negative value for ${k}`,false);b[k]=+v}
+  $('#bm').disabled=true;try{const r=await api('/predict/multiple',{method:'POST',body:b});
+  $('#rm').innerHTML=`${r.warnings.map(w=>`<div class="warn">⚠ ${w}</div>`).join('')}<div class="grid g3" style="margin-top:12px">${stat('Predicted Savings',inr(r.predicted_savings),'🔮','color:var(--ok)')}${stat('Total Expenses (input)',inr(r.predicted_total_expenses),'🧾')}${stat('Savings Rate',r.savings_rate+'%','📊')}${stat('Disposable Income',inr(r.disposable_income),'💵')}</div><p class="sub">Model estimate, not a guarantee. Fit: R² ${r.r2.toFixed(4)}, MAE ${inr(r.mae)}, RMSE ${inr(r.rmse)}.</p>`;toast('Prediction saved')}catch(e){toast(e.message,false)}$('#bm').disabled=false}
+ }catch(e){fail(e)}},
+
+async models(){loading();try{const m=await metrics(),s=m.simple,u=m.multiple,d=await api('/dataset?limit=5');
+ const row=i=>`<tr><td>${i.name}</td><td>${i.target_label}</td><td>${i.n_features}</td><td>${i.r2.toFixed(4)}</td><td>${inr(i.mae)}</td><td>${Math.round(i.mse).toLocaleString('en-IN')}</td><td>${inr(i.rmse)}</td></tr>`;
+ $('#app').innerHTML=`<h2>Regression Models</h2><p class="sub">Trained on ${s.n_train} rows, tested on ${s.n_test} unseen rows (80/20 split).</p>
+ <div class="card wrap"><table><thead><tr><th>Model</th><th>Target</th><th>Features</th><th>R²</th><th>MAE</th><th>MSE</th><th>RMSE</th></tr></thead><tbody>${row(s)}${row(u)}</tbody></table>
+ <div class="info">These models predict different targets, so their metrics are not ranked against each other. MAE, MSE and RMSE are in the units of their own target.</div>${explain}</div>
+ <div class="grid g2" style="margin-top:16px"><div class="card"><h3>Simple: equation</h3><code>${s.equation}</code></div><div class="card"><h3>Multiple: equation</h3><code>${u.equation}</code></div></div>
+ <div class="card" style="margin-top:16px"><h3>Coefficients (Multiple)</h3><table><tr><th>Feature</th><th>Coefficient</th></tr><tr><td>Intercept</td><td>${u.intercept.toFixed(3)}</td></tr>${Object.entries(u.coefficients).map(([k,v])=>`<tr><td>${k}</td><td style="color:${v>=0?'var(--ok)':'var(--bad)'}">${v.toFixed(4)}</td></tr>`).join('')}</table></div>
+ <div class="card" style="margin-top:16px"><h3>Model Insights</h3><p class="sub">Data-driven model insights (not personal financial advice).</p><ul>${m.insights.map(i=>`<li>${i}</li>`).join('')}</ul></div>
+ <div class="card" style="margin-top:16px"><h3>Dataset</h3><p><code style="display:inline">${d.path}</code> · ${d.rows} rows · columns: ${d.columns.join(', ')}</p></div>`}catch(e){fail(e)}},
+
+async history(){loading();try{let f='';
+ $('#app').innerHTML=`<h2>Prediction History</h2><p class="sub">Every prediction is stored in SQLite.</p><div class="card"><div class="row" style="max-width:340px"><div><label>Filter by model</label><select id="fm"><option value="">All</option><option>Simple Linear Regression</option><option>Multiple Linear Regression</option></select></div></div>
+ <div class="wrap"><table><thead><tr><th>Time</th><th>Model</th><th>Version</th><th>Income</th><th>Predicted</th><th></th></tr></thead><tbody id="hb"></tbody></table></div></div>`;
+ async function load(){try{const r=await api('/predictions?model_type='+encodeURIComponent(f));window._h=r;
+  $('#hb').innerHTML=r.map(p=>`<tr><td>${p.timestamp.replace('T',' ')}</td><td>${p.model_type}</td><td>${p.model_version}</td><td>${inr(p.income)}</td><td>${inr(p.predicted_value)} ${p.model_type.startsWith('Simple')?'expense':'savings'}</td><td><button class="alt" data-v="${p.id}">View</button> <button class="del" data-x="${p.id}">Delete</button></td></tr>`).join('')||'<tr><td colspan=6>No predictions yet.</td></tr>';
+  $('#hb').querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{const p=r.find(x=>x.id==b.dataset.v);alert(p.model_type+'\n\nInputs:\n'+Object.entries(p.inputs).map(([k,v])=>k+': '+inr(v)).join('\n')+'\n\nPredicted: '+inr(p.predicted_value)+(p.predicted_extra.savings_rate!==undefined?'\nSavings rate: '+p.predicted_extra.savings_rate.toFixed(1)+'%':''))});
+  $('#hb').querySelectorAll('[data-x]').forEach(b=>b.onclick=async()=>{try{await api('/predictions/'+b.dataset.x,{method:'DELETE'});toast('Deleted');load()}catch(e){toast(e.message,false)}})}catch(e){toast(e.message,false)}}
+ $('#fm').onchange=e=>{f=e.target.value;load()};load()}catch(e){fail(e)}},
+
+about(){$('#app').innerHTML=`<h2>About Project</h2><p class="sub">FinancePredict — Personal Expense &amp; Savings Prediction Using Linear and Multiple Linear Regression</p>
+ <div class="grid g2"><div class="card"><h3>Problem statement</h3><p>People find it hard to estimate future expenses and see how spending categories affect savings. FinancePredict uses historical data and regression to estimate both.</p></div>
+ <div class="card"><h3>Objectives</h3><ul><li>Analyse personal financial data</li><li>Predict expenses (Simple LR)</li><li>Predict savings (Multiple LR)</li><li>Compare model performance</li><li>Visualise trends and give data-driven insights</li></ul></div>
+ <div class="card"><h3>Variables</h3><p><b>Simple:</b> X = monthly_income, y = total_expenses.<br><b>Multiple:</b> X = income, rent, food, transportation, utilities, healthcare, entertainment, education, other_expenses; y = savings.</p></div>
+ <div class="card"><h3>ML concepts</h3><ul><li><b>Linear Regression</b>: best-fit line by least squares.</li><li><b>Multiple LR</b>: same idea with many features.</li><li><b>Train/test</b>: 80% fit, 20% evaluate on unseen rows.</li><li><b>Coefficients</b>: change in target per unit feature change, others fixed.</li><li><b>R², MAE, MSE, RMSE</b>: fit and error metrics.</li></ul></div></div>
+ <div class="card" style="margin-top:16px"><h3>How prediction works</h3><div class="flow"><span class="b">User Input</span>→<span class="b">Preprocessing</span>→<span class="b">Trained Regression Model</span>→<span class="b">Prediction</span>→<span class="b">Visualization</span></div>
+ <div class="warn">Dataset note: the dataset is synthetic. Because savings = income − expenses (plus noise), the multiple model scores a very high R². That reflects the data's structure, not real-world predictive power.</div></div>
+ <div class="card" style="margin-top:16px"><h3>Stack</h3><p>Python · FastAPI · pandas · NumPy · scikit-learn · SQLite · Chart.js</p></div>`}};
+
+function avp(m){const v=m.actual_vs_pred,mn=Math.min(...v.map(p=>p.x)),mx=Math.max(...v.map(p=>p.x));
+ return{type:'scatter',data:{datasets:[{label:'Test predictions',data:v,backgroundColor:'#14B8A688'},{type:'line',label:'Perfect fit (y = x)',data:[{x:mn,y:mn},{x:mx,y:mx}],borderColor:'#F59E0B',pointRadius:0}]},options:{scales:{x:{title:{display:true,text:'Actual Savings'}},y:{title:{display:true,text:'Predicted Savings'}}}}}}
+function route(){const h=(location.hash||'#home').slice(1),p=pages[h]?h:'home';document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+p));
+ Object.values(charts).forEach(c=>c.destroy());charts={};pages[p]()}
+addEventListener('hashchange',route);route();
+</script></body></html>
